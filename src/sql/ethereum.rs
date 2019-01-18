@@ -71,7 +71,7 @@ impl Sequelizable for Log {
         format!(
             "DECODE('{:x}', 'hex'), DECODE('{:x?}', 'hex'), DECODE('{}', 'hex'), DECODE('{}', 'hex'),\
             DECODE('{}', 'hex'), DECODE('{}', 'hex'), DECODE('{}', 'hex'), DECODE('{}', 'hex'),\
-            {}
+            '{}'
             ",
             self.address,
             self.data.0,

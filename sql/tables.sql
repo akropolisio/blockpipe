@@ -76,6 +76,8 @@ FROM transactions t;
 GRANT SELECT ON TABLE view_last_block TO bp_writer;
 GRANT INSERT ON TABLE blocks TO bp_writer;
 GRANT INSERT, SELECT, UPDATE ON TABLE transactions TO bp_writer;
+GRANT INSERT, SELECT, UPDATE ON TABLE topics TO bp_writer;
+GRANT INSERT, SELECT, UPDATE ON TABLE logs TO bp_writer;
 
 GRANT SELECT ON TABLE view_blocks TO bp_reader;
 GRANT SELECT ON TABLE view_transactions TO bp_reader;

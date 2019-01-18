@@ -10,7 +10,9 @@ use sql::Sequelizable;
 use web3;
 use web3::futures::Future;
 use web3::transports::EventLoopHandle;
-use web3::types::{Block, BlockId, SyncState, Transaction};
+use web3::types::{
+    Block, BlockId, BlockNumber, FilterBuilder, Log, SyncState, Transaction,
+};
 use web3::Transport;
 use web3::Web3;
 
@@ -102,12 +104,15 @@ impl<T: Transport> Pipe<T> {
         let mut next_block_number = self.last_db_block + 1;
         let mut processed: i32 = 0;
         let mut processed_tx: i32 = 0;
+        let mut processed_logs: i32 = 0;
         let mut sql_blocks: String = String::with_capacity(1096 * 1024 * 10);
         let mut sql_transactions: String =
             String::with_capacity(4096 * 1024 * 10);
+        let mut sql_logs: String = String::with_capacity(8096 * 1024 * 10);
 
         Self::write_insert_header::<Block<Transaction>>(&mut sql_blocks)?;
         Self::write_insert_header::<Transaction>(&mut sql_transactions)?;
+        Self::write_insert_header::<Log>(&mut sql_logs)?;
 
         while processed < MAX_BLOCKS_PER_BATCH
             && next_block_number <= self.last_node_block
@@ -131,6 +136,25 @@ impl<T: Transport> Pipe<T> {
                 )?;
                 processed_tx += 1;
             }
+
+            if let Some(block_number) = block.number {
+                let logs = self
+                    .web3
+                    .eth()
+                    .logs(
+                        FilterBuilder::default()
+                            .from_block(BlockNumber::from(
+                                block_number.low_u64(),
+                            ))
+                            .build(),
+                    )
+                    .wait()?;
+
+                for log in logs {
+                    write!(&mut sql_logs, "({}),\n", log.to_insert_values())?;
+                    processed_logs += 1;
+                }
+            }
         }
 
         if processed == 0 {
@@ -138,6 +162,7 @@ impl<T: Transport> Pipe<T> {
         }
         Self::trim_ends(&mut sql_blocks);
         Self::trim_ends(&mut sql_transactions);
+        Self::trim_ends(&mut sql_logs);
         // upsert in case of reorg
         write!(&mut sql_transactions, "\nON CONFLICT (hash) DO UPDATE SET nonce = excluded.nonce, blockHash = excluded.blockHash, blockNumber = excluded.blockNumber, transactionIndex = excluded.transactionIndex, \"from\" = excluded.from, \"to\" = excluded.to, \"value\" = excluded.value, gas = excluded.gas, gasPrice = excluded.gasPrice")?;
 
@@ -148,6 +173,12 @@ impl<T: Transport> Pipe<T> {
         if processed_tx > 0 {
             pg_tx.execute(&sql_transactions, &[])?;
         }
+
+        if processed_logs > 0 {
+            // save logs
+            pg_tx.execute(&sql_logs, &[])?;
+        }
+
         pg_tx.commit()?;
 
         self.last_db_block = next_block_number - 1;
