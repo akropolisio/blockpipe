@@ -2,6 +2,8 @@ CREATE ROLE bp_writer WITH LOGIN;
 ALTER ROLE bp_writer WITH PASSWORD 'password';
 CREATE ROLE bp_reader WITH LOGIN;
 ALTER ROLE bp_reader WITH PASSWORD 'password';
+CREATE ROLE bp_admin WITH LOGIN;
+ALTER ROLE bp_admin WITH PASSWORD 'adminpassword';
 
 CREATE DOMAIN ADDRESS AS BYTEA CHECK(length(value) = 20);
 CREATE DOMAIN H256 AS BYTEA CHECK(length(value) = 32);
@@ -25,6 +27,31 @@ CREATE UNLOGGED TABLE transactions (
   gas U256 NOT NULL,
   gasPrice U256 NOT NULL
 );
+
+CREATE UNLOGGED TABLE logs (
+  address ADDRESS PRIMARY KEY,
+  data BYTEA NOT NULL,
+  block_hash H256,
+  block_number U256,
+  transaction_hash H256,
+  transaction_index U256,
+  log_index U256,
+  transaction_log_index U256,
+  log_type VARCHAR,
+  removed BOOLEAN
+);
+
+CREATE INDEX ON logs(block_hash);
+CREATE INDEX ON logs(transaction_hash);
+CREATE INDEX ON logs(log_type);
+
+CREATE UNLOGGED TABLE topics (
+  topic U256 NOT NULL,
+  log_address ADDRESS NOT NULL REFERENCES logs(address),
+  PRIMARY KEY (topic, log_address)
+);
+CREATE INDEX ON topics(topic);
+CREATE INDEX ON topics(log_address);
 
 CREATE VIEW view_last_block
 AS
@@ -52,3 +79,5 @@ GRANT INSERT, SELECT, UPDATE ON TABLE transactions TO bp_writer;
 
 GRANT SELECT ON TABLE view_blocks TO bp_reader;
 GRANT SELECT ON TABLE view_transactions TO bp_reader;
+
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO bp_admin;

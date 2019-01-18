@@ -61,6 +61,8 @@ impl<T: Transport> Pipe<T> {
         let last_block_number = self.web3.eth().block_number().wait()?.as_u64();
         let syncing = self.web3.eth().syncing().wait()?;
 
+        println!(">> last_block_number: {}", last_block_number);
+
         self.last_node_block = last_block_number;
         self.syncing = syncing != SyncState::NotSyncing;
         Ok(true)
@@ -160,6 +162,7 @@ impl<T: Transport> Pipe<T> {
         loop {
             self.update_node_info()?;
             if self.sleep_when_syncing() {
+                println!(">> sleep_when_syncing == true");
                 continue;
             }
 
