@@ -104,23 +104,18 @@ impl<T: Transport> Pipe<T> {
         let mut next_block_number = self.last_db_block + 1;
 
         let mut processed: i32 = 0;
-        let mut processed_tx: i32 = 0;
-        let mut processed_logs: i32 = 0;
-        let mut processed_topics: i32 = 0;
 
         let mut insert_blocks: SqlInsert<Block<Transaction>> =
             SqlInsert::new(1096);
         let mut insert_transactions: SqlInsert<Transaction> =
             SqlInsert::new(8096);
-
-        let mut sql_logs: String = String::with_capacity(8096 * 1024 * 10);
-        let mut sql_topics: String = String::with_capacity(1096 * 1024 * 10);
+        let mut insert_logs: SqlInsert<Log> = SqlInsert::new(4096);
+        let mut insert_topics: SqlInsert<Topic> = SqlInsert::new(1096);
 
         insert_blocks.start()?;
         insert_transactions.start()?;
-
-        Self::write_insert_header::<Log>(&mut sql_logs)?;
-        Self::write_insert_header::<Topic>(&mut sql_topics)?;
+        insert_logs.start()?;
+        insert_topics.start()?;
 
         while processed < MAX_BLOCKS_PER_BATCH
             && next_block_number <= self.last_node_block
@@ -154,20 +149,13 @@ impl<T: Transport> Pipe<T> {
                     .wait()?;
 
                 for log in logs {
-                    write!(&mut sql_logs, "({}),\n", log.to_insert_values())?;
-                    processed_logs += 1;
+                    insert_logs.insert(log.clone());
 
                     for topic in log.topics {
-                        write!(
-                            &mut sql_topics,
-                            "({}),\n",
-                            sql::Topic {
-                                topic,
-                                log_address: log.address
-                            }
-                            .to_insert_values()
-                        )?;
-                        processed_topics += 1;
+                        insert_topics.insert(sql::Topic {
+                            topic,
+                            log_address: log.address,
+                        });
                     }
                 }
             }
@@ -177,9 +165,6 @@ impl<T: Transport> Pipe<T> {
             return Ok(0);
         }
 
-        Self::trim_ends(&mut sql_logs);
-        Self::trim_ends(&mut sql_topics);
-
         let pg_tx = self.pg_client.transaction()?;
 
         // save the blocks
@@ -188,16 +173,9 @@ impl<T: Transport> Pipe<T> {
         // upsert in case of reorg
         insert_transactions.execute_with(&pg_tx, "\nON CONFLICT (hash) DO UPDATE SET nonce = excluded.nonce, blockHash = excluded.blockHash, blockNumber = excluded.blockNumber, transactionIndex = excluded.transactionIndex, \"from\" = excluded.from, \"to\" = excluded.to, \"value\" = excluded.value, gas = excluded.gas, gasPrice = excluded.gasPrice".to_string())?;
 
-        if processed_logs > 0 {
-            // save logs
-            println!("{}", sql_logs);
-            pg_tx.execute(&sql_logs, &[])?;
-        }
-
-        if processed_topics > 0 {
-            println!("{}", sql_topics);
-            pg_tx.execute(&sql_topics, &[])?;
-        }
+        // save logs
+        insert_logs.execute(&pg_tx)?;
+        insert_topics.execute(&pg_tx)?;
 
         pg_tx.commit()?;
 
