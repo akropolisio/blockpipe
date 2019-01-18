@@ -1,7 +1,7 @@
 extern crate web3;
 use sql::Sequelizable;
 use std::fmt::LowerHex;
-use web3::types::{Block, Log, Transaction, H160, H256};
+use web3::types::{Block, Log, Transaction, TransactionReceipt, H160, H256};
 
 impl Sequelizable for Transaction {
     fn table_name() -> &'static str {
@@ -117,6 +117,24 @@ impl Sequelizable for Topic {
         format!(
             "DECODE('{:x}', 'hex'), DECODE('{:x}', 'hex')",
             self.topic, self.log_address,
+        )
+    }
+}
+
+impl Sequelizable for TransactionReceipt {
+    fn table_name() -> &'static str {
+        "receipts"
+    }
+
+    fn insert_fields() -> &'static str {
+        "transaction_hash, status"
+    }
+
+    fn to_insert_values(&self) -> String {
+        format!(
+            "DECODE('{:x}', 'hex'), {}",
+            self.transaction_hash,
+            self.status.unwrap_or_default()
         )
     }
 }

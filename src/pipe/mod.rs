@@ -108,13 +108,18 @@ impl<T: Transport> Pipe<T> {
         let mut processed_logs: i32 = 0;
         let mut processed_topics: i32 = 0;
 
-        let mut sql_blocks: String = String::with_capacity(1096 * 1024 * 10);
+        let mut insert_blocks: SqlInsert<Block<Transaction>> =
+            SqlInsert::new(1096);
+
+        // let mut sql_blocks: String = String::with_capacity(1096 * 1024 * 10);
         let mut sql_transactions: String =
             String::with_capacity(4096 * 1024 * 10);
         let mut sql_logs: String = String::with_capacity(8096 * 1024 * 10);
         let mut sql_topics: String = String::with_capacity(1096 * 1024 * 10);
 
-        Self::write_insert_header::<Block<Transaction>>(&mut sql_blocks)?;
+        insert_blocks.start()?;
+
+        // Self::write_insert_header::<Block<Transaction>>(&mut sql_blocks)?;
         Self::write_insert_header::<Transaction>(&mut sql_transactions)?;
         Self::write_insert_header::<Log>(&mut sql_logs)?;
         Self::write_insert_header::<Topic>(&mut sql_topics)?;
@@ -131,7 +136,9 @@ impl<T: Transport> Pipe<T> {
             next_block_number += 1;
             processed += 1;
 
-            write!(&mut sql_blocks, "({}),\n", block.to_insert_values())?;
+            insert_blocks.insert(block.clone());
+
+            // write!(&mut sql_blocks, "({}),\n", block.to_insert_values())?;
 
             for tx in block.transactions.iter() {
                 write!(
@@ -178,7 +185,7 @@ impl<T: Transport> Pipe<T> {
         if processed == 0 {
             return Ok(0);
         }
-        Self::trim_ends(&mut sql_blocks);
+        // Self::trim_ends(&mut sql_blocks);
         Self::trim_ends(&mut sql_transactions);
         Self::trim_ends(&mut sql_logs);
         Self::trim_ends(&mut sql_topics);
@@ -187,7 +194,8 @@ impl<T: Transport> Pipe<T> {
 
         let pg_tx = self.pg_client.transaction()?;
         // save the blocks
-        pg_tx.execute(&sql_blocks, &[])?;
+        insert_blocks.execute(&pg_tx)?;
+        // pg_tx.execute(&sql_blocks, &[])?;
 
         if processed_tx > 0 {
             pg_tx.execute(&sql_transactions, &[])?;
@@ -237,6 +245,66 @@ impl<T: Transport> Pipe<T> {
             }
 
             Self::sleep_with_msg("Run done, sleeping for one minute.")
+        }
+    }
+}
+
+struct SqlInsert<T> {
+    processed: u32,
+    sql: String,
+    items: Vec<T>,
+}
+
+impl<T: Sequelizable> SqlInsert<T> {
+    fn new(size: usize) -> Self {
+        SqlInsert {
+            processed: 0,
+            sql: String::with_capacity(size * 1024 * 10),
+            items: Vec::new(),
+        }
+    }
+
+    fn start(&mut self) -> Result<(), std::fmt::Error> {
+        write!(
+            &mut self.sql,
+            "INSERT INTO {} ({}) VALUES\n",
+            T::table_name(),
+            T::insert_fields()
+        )
+    }
+
+    fn insert(&mut self, value: T) {
+        self.items.push(value);
+        self.processed += 1;
+    }
+
+    fn get_sql(&self) -> Option<String> {
+        if self.processed > 0 {
+            let mut sql = format!(
+                "{}{}",
+                &self.sql,
+                self.items.iter().fold(String::new(), |t, it| format!(
+                    "{}({}),\n",
+                    t,
+                    it.to_insert_values()
+                ))
+            );
+            sql.pop();
+            sql.pop();
+            Some(sql)
+        } else {
+            None
+        }
+    }
+
+    fn execute(
+        &self,
+        tx: &postgres::transaction::Transaction,
+    ) -> postgres::Result<u64> {
+        if let Some(sql) = self.get_sql() {
+            tx.execute(&sql, &[])
+        } else {
+            Ok(0)
         }
     }
 }

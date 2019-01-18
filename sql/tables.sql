@@ -53,6 +53,11 @@ CREATE UNLOGGED TABLE topics (
 CREATE INDEX ON topics(topic);
 CREATE INDEX ON topics(log_address);
 
+CREATE UNLOGGED TABLE receipts (
+  transaction_hash H256 PRIMARY KEY,
+  status INT
+);
+
 CREATE VIEW view_last_block
 AS
 SELECT b.number
@@ -78,8 +83,12 @@ GRANT INSERT ON TABLE blocks TO bp_writer;
 GRANT INSERT, SELECT, UPDATE ON TABLE transactions TO bp_writer;
 GRANT INSERT, SELECT, UPDATE ON TABLE topics TO bp_writer;
 GRANT INSERT, SELECT, UPDATE ON TABLE logs TO bp_writer;
+GRANT INSERT, SELECT, UPDATE ON TABLE receipts TO bp_writer;
 
 GRANT SELECT ON TABLE view_blocks TO bp_reader;
 GRANT SELECT ON TABLE view_transactions TO bp_reader;
+GRANT SELECT ON TABLE topics TO bp_reader;
+GRANT SELECT ON TABLE logs TO bp_reader;
+GRANT SELECT ON TABLE receipts TO bp_reader;
 
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO bp_admin;
