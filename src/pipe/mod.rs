@@ -12,6 +12,7 @@ use web3::futures::Future;
 use web3::transports::EventLoopHandle;
 use web3::types::{
     Block, BlockId, BlockNumber, FilterBuilder, Log, SyncState, Transaction,
+    TransactionReceipt,
 };
 use web3::Transport;
 use web3::Web3;
@@ -84,22 +85,6 @@ impl<T: Transport> Pipe<T> {
         false
     }
 
-    fn write_insert_header<S: Sequelizable>(
-        mut sql_query: &mut String,
-    ) -> Result<(), std::fmt::Error> {
-        write!(
-            &mut sql_query,
-            "INSERT INTO {}({}) VALUES\n",
-            S::table_name(),
-            S::insert_fields()
-        )
-    }
-
-    fn trim_ends(sql_query: &mut String) {
-        sql_query.pop(); // remove \n
-        sql_query.pop(); // remove ,
-    }
-
     fn store_next_batch(&mut self) -> Result<i32, error::PipeError> {
         let mut next_block_number = self.last_db_block + 1;
 
@@ -109,11 +94,14 @@ impl<T: Transport> Pipe<T> {
             SqlInsert::new(1096);
         let mut insert_transactions: SqlInsert<Transaction> =
             SqlInsert::new(8096);
+        let mut insert_receipts: SqlInsert<TransactionReceipt> =
+            SqlInsert::new(4096);
         let mut insert_logs: SqlInsert<Log> = SqlInsert::new(4096);
         let mut insert_topics: SqlInsert<Topic> = SqlInsert::new(1096);
 
         insert_blocks.start()?;
         insert_transactions.start()?;
+        insert_receipts.start()?;
         insert_logs.start()?;
         insert_topics.start()?;
 
@@ -133,6 +121,12 @@ impl<T: Transport> Pipe<T> {
 
             for tx in block.transactions.iter() {
                 insert_transactions.insert(tx.clone());
+
+                let receipt =
+                    self.web3.eth().transaction_receipt(tx.hash).wait()?;
+                if let Some(receipt) = receipt {
+                    insert_receipts.insert(receipt);
+                }
             }
 
             if let Some(block_number) = block.number {
@@ -172,6 +166,7 @@ impl<T: Transport> Pipe<T> {
 
         // upsert in case of reorg
         insert_transactions.execute_with(&pg_tx, "\nON CONFLICT (hash) DO UPDATE SET nonce = excluded.nonce, blockHash = excluded.blockHash, blockNumber = excluded.blockNumber, transactionIndex = excluded.transactionIndex, \"from\" = excluded.from, \"to\" = excluded.to, \"value\" = excluded.value, gas = excluded.gas, gasPrice = excluded.gasPrice".to_string())?;
+        insert_receipts.execute(&pg_tx)?;
 
         // save logs
         insert_logs.execute(&pg_tx)?;
