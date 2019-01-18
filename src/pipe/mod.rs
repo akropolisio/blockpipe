@@ -121,12 +121,13 @@ impl<T: Transport> Pipe<T> {
             next_block_number += 1;
             processed += 1;
 
-            let wei_3: U256 = "3000000000000000000".parse().unwrap();
+            let static_reward: U256 = "3000000000000000000".parse().unwrap();
+            let uncle_reward: U256 = "2625000000000000000".parse().unwrap();
 
-            let mut reward: U256 = wei_3.clone();
+            let mut reward: U256 = static_reward.clone();
 
-            // let uncles_count = block.uncles.len();
-            // reward += (wei_3 * uncles_count) * (1 / 32);
+            let uncles_count = block.uncles.len();
+            reward += uncle_reward * uncles_count;
 
             insert_blocks.insert(block.clone());
 
