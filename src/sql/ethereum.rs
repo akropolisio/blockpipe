@@ -1,7 +1,9 @@
 extern crate web3;
 use sql::Sequelizable;
 use std::fmt::LowerHex;
-use web3::types::{Block, Log, Transaction, TransactionReceipt, H160, H256};
+use web3::types::{
+    Block, Log, Transaction, TransactionReceipt, H160, H256, U128, U256,
+};
 
 impl Sequelizable for Transaction {
     fn table_name() -> &'static str {
@@ -136,5 +138,25 @@ impl Sequelizable for TransactionReceipt {
             self.transaction_hash,
             self.status.unwrap_or_default()
         )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Reward {
+    pub block_number: U128,
+    pub reward: U256,
+}
+
+impl Sequelizable for Reward {
+    fn table_name() -> &'static str {
+        "rewards"
+    }
+
+    fn insert_fields() -> &'static str {
+        "block_number, reward"
+    }
+
+    fn to_insert_values(&self) -> String {
+        format!("{}, {}", self.block_number, self.reward)
     }
 }

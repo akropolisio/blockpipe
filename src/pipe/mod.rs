@@ -6,13 +6,13 @@ use std::fmt::Write;
 use std::string::String;
 
 use sql;
-use sql::{Sequelizable, Topic};
+use sql::{Reward, Sequelizable, Topic};
 use web3;
 use web3::futures::Future;
 use web3::transports::EventLoopHandle;
 use web3::types::{
     Block, BlockId, BlockNumber, FilterBuilder, Log, SyncState, Transaction,
-    TransactionReceipt,
+    TransactionReceipt, U256,
 };
 use web3::Transport;
 use web3::Web3;
@@ -92,6 +92,7 @@ impl<T: Transport> Pipe<T> {
 
         let mut insert_blocks: SqlInsert<Block<Transaction>> =
             SqlInsert::new(1096);
+        let mut insert_rewards: SqlInsert<Reward> = SqlInsert::new(1024);
         let mut insert_transactions: SqlInsert<Transaction> =
             SqlInsert::new(8096);
         let mut insert_receipts: SqlInsert<TransactionReceipt> =
@@ -100,8 +101,11 @@ impl<T: Transport> Pipe<T> {
         let mut insert_topics: SqlInsert<Topic> = SqlInsert::new(1096);
 
         insert_blocks.start()?;
+        insert_rewards.start()?;
+
         insert_transactions.start()?;
         insert_receipts.start()?;
+
         insert_logs.start()?;
         insert_topics.start()?;
 
@@ -117,6 +121,13 @@ impl<T: Transport> Pipe<T> {
             next_block_number += 1;
             processed += 1;
 
+            let wei_3: U256 = "3000000000000000000".parse().unwrap();
+
+            let mut reward: U256 = wei_3.clone();
+
+            // let uncles_count = block.uncles.len();
+            // reward += (wei_3 * uncles_count) * (1 / 32);
+
             insert_blocks.insert(block.clone());
 
             for tx in block.transactions.iter() {
@@ -124,9 +135,18 @@ impl<T: Transport> Pipe<T> {
 
                 let receipt =
                     self.web3.eth().transaction_receipt(tx.hash).wait()?;
+
                 if let Some(receipt) = receipt {
+                    reward += tx.gas_price * receipt.gas_used;
                     insert_receipts.insert(receipt);
                 }
+            }
+
+            if let Some(block_number) = block.number {
+                insert_rewards.insert(Reward {
+                    block_number: block_number,
+                    reward,
+                });
             }
 
             if let Some(block_number) = block.number {
@@ -163,6 +183,7 @@ impl<T: Transport> Pipe<T> {
 
         // save the blocks
         insert_blocks.execute(&pg_tx)?;
+        insert_rewards.execute(&pg_tx)?;
 
         // upsert in case of reorg
         insert_transactions.execute_with(&pg_tx, "\nON CONFLICT (hash) DO UPDATE SET nonce = excluded.nonce, blockHash = excluded.blockHash, blockNumber = excluded.blockNumber, transactionIndex = excluded.transactionIndex, \"from\" = excluded.from, \"to\" = excluded.to, \"value\" = excluded.value, gas = excluded.gas, gasPrice = excluded.gasPrice".to_string())?;

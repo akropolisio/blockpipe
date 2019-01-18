@@ -15,6 +15,12 @@ CREATE UNLOGGED TABLE blocks (
   "timestamp" TIMESTAMP NOT NULL
 );
 
+CREATE UNLOGGED TABLE rewards (
+  block_number BIGINT REFERENCES blocks("number"),
+  reward U256
+);
+CREATE INDEX ON rewards(block_number);
+
 CREATE UNLOGGED TABLE transactions (
   hash H256 PRIMARY KEY,
   nonce U256,
@@ -78,17 +84,19 @@ CREATE VIEW view_transactions
 AS SELECT hash AS hash_raw, ENCODE(hash, 'hex') AS hash, blockNumber, ENCODE(blockHash, 'hex') AS blockHash, ENCODE(t.from, 'hex') AS "from", t.from AS from_raw, ENCODE(t.to, 'hex') AS "to", t.to AS to_raw, t.value, gas, gasPrice
 FROM transactions t;
 
-GRANT SELECT ON TABLE view_last_block TO bp_writer;
 GRANT INSERT ON TABLE blocks TO bp_writer;
-GRANT INSERT, SELECT, UPDATE ON TABLE transactions TO bp_writer;
-GRANT INSERT, SELECT, UPDATE ON TABLE topics TO bp_writer;
 GRANT INSERT, SELECT, UPDATE ON TABLE logs TO bp_writer;
 GRANT INSERT, SELECT, UPDATE ON TABLE receipts TO bp_writer;
+GRANT INSERT, SELECT, UPDATE ON TABLE rewards TO bp_writer;
+GRANT INSERT, SELECT, UPDATE ON TABLE topics TO bp_writer;
+GRANT INSERT, SELECT, UPDATE ON TABLE transactions TO bp_writer;
+GRANT SELECT ON TABLE view_last_block TO bp_writer;
 
-GRANT SELECT ON TABLE view_blocks TO bp_reader;
-GRANT SELECT ON TABLE view_transactions TO bp_reader;
-GRANT SELECT ON TABLE topics TO bp_reader;
 GRANT SELECT ON TABLE logs TO bp_reader;
 GRANT SELECT ON TABLE receipts TO bp_reader;
+GRANT SELECT ON TABLE rewards TO bp_reader;
+GRANT SELECT ON TABLE topics TO bp_reader;
+GRANT SELECT ON TABLE view_blocks TO bp_reader;
+GRANT SELECT ON TABLE view_transactions TO bp_reader;
 
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO bp_admin;
