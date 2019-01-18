@@ -1,5 +1,7 @@
 mod ethereum;
 
+pub use self::ethereum::Topic;
+
 pub const LAST_DB_BLOCK_QUERY: &str = "SELECT number FROM view_last_block";
 
 pub trait Sequelizable {

@@ -6,7 +6,7 @@ use std::fmt::Write;
 use std::string::String;
 
 use sql;
-use sql::Sequelizable;
+use sql::{Sequelizable, Topic};
 use web3;
 use web3::futures::Future;
 use web3::transports::EventLoopHandle;
@@ -102,17 +102,22 @@ impl<T: Transport> Pipe<T> {
 
     fn store_next_batch(&mut self) -> Result<i32, error::PipeError> {
         let mut next_block_number = self.last_db_block + 1;
+
         let mut processed: i32 = 0;
         let mut processed_tx: i32 = 0;
         let mut processed_logs: i32 = 0;
+        let mut processed_topics: i32 = 0;
+
         let mut sql_blocks: String = String::with_capacity(1096 * 1024 * 10);
         let mut sql_transactions: String =
             String::with_capacity(4096 * 1024 * 10);
         let mut sql_logs: String = String::with_capacity(8096 * 1024 * 10);
+        let mut sql_topics: String = String::with_capacity(1096 * 1024 * 10);
 
         Self::write_insert_header::<Block<Transaction>>(&mut sql_blocks)?;
         Self::write_insert_header::<Transaction>(&mut sql_transactions)?;
         Self::write_insert_header::<Log>(&mut sql_logs)?;
+        Self::write_insert_header::<Topic>(&mut sql_topics)?;
 
         while processed < MAX_BLOCKS_PER_BATCH
             && next_block_number <= self.last_node_block
@@ -153,6 +158,19 @@ impl<T: Transport> Pipe<T> {
                 for log in logs {
                     write!(&mut sql_logs, "({}),\n", log.to_insert_values())?;
                     processed_logs += 1;
+
+                    for topic in log.topics {
+                        write!(
+                            &mut sql_topics,
+                            "({}),\n",
+                            sql::Topic {
+                                topic,
+                                log_address: log.address
+                            }
+                            .to_insert_values()
+                        )?;
+                        processed_topics += 1;
+                    }
                 }
             }
         }
@@ -163,6 +181,7 @@ impl<T: Transport> Pipe<T> {
         Self::trim_ends(&mut sql_blocks);
         Self::trim_ends(&mut sql_transactions);
         Self::trim_ends(&mut sql_logs);
+        Self::trim_ends(&mut sql_topics);
         // upsert in case of reorg
         write!(&mut sql_transactions, "\nON CONFLICT (hash) DO UPDATE SET nonce = excluded.nonce, blockHash = excluded.blockHash, blockNumber = excluded.blockNumber, transactionIndex = excluded.transactionIndex, \"from\" = excluded.from, \"to\" = excluded.to, \"value\" = excluded.value, gas = excluded.gas, gasPrice = excluded.gasPrice")?;
 
@@ -176,7 +195,13 @@ impl<T: Transport> Pipe<T> {
 
         if processed_logs > 0 {
             // save logs
+            println!("{}", sql_logs);
             pg_tx.execute(&sql_logs, &[])?;
+        }
+
+        if processed_topics > 0 {
+            println!("{}", sql_topics);
+            pg_tx.execute(&sql_topics, &[])?;
         }
 
         pg_tx.commit()?;
