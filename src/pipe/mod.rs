@@ -122,6 +122,7 @@ impl<T: Transport> Pipe<T> {
             processed += 1;
 
             let static_reward: U256 = "3000000000000000000".parse().unwrap();
+            // uncle reward is 7/8 of static reward
             let uncle_reward: U256 = "2625000000000000000".parse().unwrap();
 
             let mut reward: U256 = static_reward.clone();
