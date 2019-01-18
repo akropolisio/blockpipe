@@ -110,17 +110,15 @@ impl<T: Transport> Pipe<T> {
 
         let mut insert_blocks: SqlInsert<Block<Transaction>> =
             SqlInsert::new(1096);
+        let mut insert_transactions: SqlInsert<Transaction> =
+            SqlInsert::new(8096);
 
-        // let mut sql_blocks: String = String::with_capacity(1096 * 1024 * 10);
-        let mut sql_transactions: String =
-            String::with_capacity(4096 * 1024 * 10);
         let mut sql_logs: String = String::with_capacity(8096 * 1024 * 10);
         let mut sql_topics: String = String::with_capacity(1096 * 1024 * 10);
 
         insert_blocks.start()?;
+        insert_transactions.start()?;
 
-        // Self::write_insert_header::<Block<Transaction>>(&mut sql_blocks)?;
-        Self::write_insert_header::<Transaction>(&mut sql_transactions)?;
         Self::write_insert_header::<Log>(&mut sql_logs)?;
         Self::write_insert_header::<Topic>(&mut sql_topics)?;
 
@@ -138,15 +136,8 @@ impl<T: Transport> Pipe<T> {
 
             insert_blocks.insert(block.clone());
 
-            // write!(&mut sql_blocks, "({}),\n", block.to_insert_values())?;
-
             for tx in block.transactions.iter() {
-                write!(
-                    &mut sql_transactions,
-                    "({}),\n",
-                    tx.to_insert_values()
-                )?;
-                processed_tx += 1;
+                insert_transactions.insert(tx.clone());
             }
 
             if let Some(block_number) = block.number {
@@ -185,21 +176,17 @@ impl<T: Transport> Pipe<T> {
         if processed == 0 {
             return Ok(0);
         }
-        // Self::trim_ends(&mut sql_blocks);
-        Self::trim_ends(&mut sql_transactions);
+
         Self::trim_ends(&mut sql_logs);
         Self::trim_ends(&mut sql_topics);
-        // upsert in case of reorg
-        write!(&mut sql_transactions, "\nON CONFLICT (hash) DO UPDATE SET nonce = excluded.nonce, blockHash = excluded.blockHash, blockNumber = excluded.blockNumber, transactionIndex = excluded.transactionIndex, \"from\" = excluded.from, \"to\" = excluded.to, \"value\" = excluded.value, gas = excluded.gas, gasPrice = excluded.gasPrice")?;
 
         let pg_tx = self.pg_client.transaction()?;
+
         // save the blocks
         insert_blocks.execute(&pg_tx)?;
-        // pg_tx.execute(&sql_blocks, &[])?;
 
-        if processed_tx > 0 {
-            pg_tx.execute(&sql_transactions, &[])?;
-        }
+        // upsert in case of reorg
+        insert_transactions.execute_with(&pg_tx, "\nON CONFLICT (hash) DO UPDATE SET nonce = excluded.nonce, blockHash = excluded.blockHash, blockNumber = excluded.blockNumber, transactionIndex = excluded.transactionIndex, \"from\" = excluded.from, \"to\" = excluded.to, \"value\" = excluded.value, gas = excluded.gas, gasPrice = excluded.gasPrice".to_string())?;
 
         if processed_logs > 0 {
             // save logs
@@ -303,6 +290,19 @@ impl<T: Sequelizable> SqlInsert<T> {
     ) -> postgres::Result<u64> {
         if let Some(sql) = self.get_sql() {
             tx.execute(&sql, &[])
+        } else {
+            Ok(0)
+        }
+    }
+
+    fn execute_with(
+        &self,
+        tx: &postgres::transaction::Transaction,
+        extra_sql: String,
+    ) -> postgres::Result<u64> {
+        if let Some(sql) = self.get_sql() {
+            let full_sql = format!("{} {}", sql, extra_sql);
+            tx.execute(&full_sql, &[])
         } else {
             Ok(0)
         }
