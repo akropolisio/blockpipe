@@ -38,7 +38,7 @@ CREATE UNLOGGED TABLE logs (
   data BYTEA NOT NULL,
   block_hash H256,
   block_number U256,
-  transaction_hash H256,
+  transaction_hash H256 REFERENCES transactions("hash"),
   transaction_index U256,
   log_index U256,
   transaction_log_index U256,
