@@ -16,10 +16,9 @@ CREATE UNLOGGED TABLE blocks (
 );
 
 CREATE UNLOGGED TABLE rewards (
-  block_number BIGINT REFERENCES blocks("number"),
+  block_number BIGINT REFERENCES blocks("number") PRIMARY KEY,
   reward U256
 );
-CREATE INDEX ON rewards(block_number);
 
 CREATE UNLOGGED TABLE transactions (
   hash H256 PRIMARY KEY,
